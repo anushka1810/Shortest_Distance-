@@ -358,20 +358,3 @@
 
 
 
-
-
-
-
-function dijkstra(graph, source):
-    dist[] = ∞
-    parent[] = -1
-    dist[source] = 0
-    priorityQueue.push(source, 0)
-
-    while queue not empty:
-        u = extractMin()
-        for each neighbor v of u:
-            if dist[u] + weight(u,v) < dist[v]:
-                dist[v] = dist[u] + weight(u,v)
-                parent[v] = u
-                priorityQueue.push(v, dist[v])
