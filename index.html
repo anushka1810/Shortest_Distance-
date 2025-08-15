@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shortest Path Finder • Dijkstra (City Map)</title>
+  <style>
+    :root{
+      --bg:#0b0f14;          /* dark background */
+      --panel:#121823;       /* side panel */
+      --muted:#7f8ea3;       /* muted text */
+      --text:#e6edf6;        /* main text */
+      --brand:#6aa9ff;       /* primary */
+      --accent:#52d88a;      /* success */
+      --warn:#ff5a64;        /* highlight path */
+      --node:#1b2433;        /* node fill */
+      --nodeBorder:#9fb4d6;  /* node border */
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b0f14 0%, #0e1420 100%);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+    .app{display:grid;grid-template-columns:1fr 360px;min-height:100vh}
+    .canvasWrap{position:relative;display:flex;align-items:center;justify-content:center;padding:20px}
+    canvas{background:radial-gradient(1200px 800px at 20% 10%, #10182a 0%, #0b0f14 55%, #0b0f14 100%);border-radius:18px;box-shadow:var(--shadow);width:100%;height:auto;max-width:1200px;aspect-ratio: 16/9;}
+    .panel{background:var(--panel);border-left:1px solid #1c2533;padding:16px 16px 20px;display:flex;flex-direction:column;gap:14px}
+    h1{font-size:18px;letter-spacing:.2px;margin:4px 0 2px;display:flex;gap:8px;align-items:center}
+    .badge{font-size:11px;color:#0c1422;background:#c7ddff;border:1px solid #9cc4ff;border-radius:999px;padding:2px 8px;font-weight:600;color:#0a2a66}
+    .muted{color:var(--muted);font-size:13px}
+    .card{background:#0f1624;border:1px solid #1b2a3e;border-radius:14px;padding:12px;box-shadow:var(--shadow)}
+    label{font-size:13px;color:#bcd0ea;margin-bottom:6px;display:block}
+    select, button, input[type="number"], input[type="text"]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #223148;background:#0c1422;color:#e6edf6;outline:none}
+    button{cursor:pointer;font-weight:600;transition:.2s ease;}
+    button.primary{background:linear-gradient(180deg,#3a85ff,#2a6ce6);border-color:#255fcb}
+    button.primary:hover{filter:brightness(1.04)}
+    button.ghost{background:#0c1422;border-color:#223148}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    textarea{width:100%;min-height:110px;resize:vertical;background:#0c1422;border:1px solid #223148;border-radius:10px;color:#e6edf6;padding:10px}
+    .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .tag{display:inline-flex;gap:6px;align-items:center;border:1px solid #21324b;background:#0c1422;border-radius:999px;padding:6px 10px}
+    .footer{margin-top:auto;font-size:12px;color:var(--muted)}
+
+    @media (max-width: 980px){
+      .app{grid-template-columns:1fr}
+      .panel{border-left:none;border-top:1px solid #1c2533}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="canvasWrap">
+      <canvas id="cityCanvas" width="1200" height="675" aria-label="City graph canvas"></canvas>
+    </div>
+
+    <aside class="panel">
+      <h1>Shortest Path Finder <span class="badge">Dijkstra</span></h1>
+      <div class="muted">Select source & destination (or click nodes on the map). Then press <b>Find Path</b>.</div>
+
+      <div class="card">
+        <div class="row">
+          <div>
+            <label for="src">Source</label>
+            <select id="src"></select>
+          </div>
+          <div>
+            <label for="dst">Destination</label>
+            <select id="dst"></select>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button id="findBtn" class="primary">Find Path</button>
+          <button id="resetBtn" class="ghost">Reset</button>
+        </div>
+      </div>
+
+      <div class="card" style="display:grid;gap:8px">
+        <label>Result</label>
+        <textarea id="result" readonly placeholder="Shortest distance & path will appear here..."></textarea>
+        <div class="legend">
+          <span class="tag"><span class="dot" style="background: #6aa9ff"></span> Source</span>
+          <span class="tag"><span class="dot" style="background: #52d88a"></span> Destination</span>
+          <span class="tag"><span class="dot" style="background: #ff5a64"></span> Shortest Path</span>
+          <span class="tag"><span class="dot" style="background: #9fb4d6"></span> Node Border</span>
+        </div>
+      </div>
+
+      <div class="card" style="display:grid;gap:10px">
+        <label>Add/Update Edge (optional for demo)</label>
+        <div class="row">
+          <select id="edgeU"></select>
+          <select id="edgeV"></select>
+        </div>
+        <div class="row">
+          <input id="edgeW" type="number" min="1" step="1" placeholder="Weight (distance)" />
+          <button id="addEdge" class="ghost">Add/Update</button>
+        </div>
+        <small class="muted">Undirected edge. If it exists, its weight will be updated.</small>
+      </div>
+
+      <div class="footer">Algorithm: Dijkstra • Complexity: O(E log V) • Drag nodes to reposition during demo</div>
+    </aside>
+  </div>
+
+  <script>
+    // ---------- Graph Data ----------
+    const nodes = [
+      { id:0, name:"Central", x:160,  y:160 },
+      { id:1, name:"Museum",  x:420,  y:110 },
+      { id:2, name:"Lake",    x:200,  y:420 },
+      { id:3, name:"TechPark",x:780,  y:220 },
+      { id:4, name:"Market",  x:470,  y:400 },
+      { id:5, name:"Stadium", x:1000, y:520 },
+    ];
+
+    // Undirected weighted edges
+    const edges = [
+      {u:0,v:1,w:4},
+      {u:0,v:2,w:2},
+      {u:1,v:2,w:5},
+      {u:1,v:3,w:10},
+      {u:2,v:4,w:3},
+      {u:4,v:3,w:4},
+      {u:3,v:5,w:11},
+      {u:1,v:4,w:6},
+    ];
+
+    // ---------- Helpers ----------
+    const $ = sel => document.querySelector(sel);
+    const srcSel = $('#src');
+    const dstSel = $('#dst');
+    const resBox = $('#result');
+    const edgeU = $('#edgeU');
+    const edgeV = $('#edgeV');
+    const edgeW = $('#edgeW');
+    const addEdgeBtn = $('#addEdge');
+
+    function populateSelects(){
+      [srcSel, dstSel, edgeU, edgeV].forEach(s => { s.innerHTML = '' });
+      nodes.forEach(n=>{
+        [srcSel, dstSel, edgeU, edgeV].forEach(s=>{
+          const o = document.createElement('option');
+          o.value = n.id; o.textContent = `${n.id} – ${n.name}`;
+          s.appendChild(o);
+        });
+      });
+      srcSel.value = 0; dstSel.value = 3; // nice default demo
+      edgeU.value = 1; edgeV.value = 4; edgeW.value = 6;
+    }
+
+    // Build adjacency list from edges
+    function buildAdj(){
+      const adj = Array.from({length:nodes.length},()=>[]);
+      edges.forEach(({u,v,w})=>{
+        adj[u].push({to:v,w});
+        adj[v].push({to:u,w});
+      });
+      return adj;
+    }
+
+    // Dijkstra's algorithm
+    function dijkstra(adj, src){
+      const n = adj.length;
+      const dist = Array(n).fill(Infinity);
+      const parent = Array(n).fill(-1);
+      const visited = Array(n).fill(false);
+      dist[src] = 0;
+
+      // Simple binary heap via array priority queue (O(n log n))
+      const pq = [];
+      const push = (v, d) => { pq.push([v,d]); siftUp(pq.length-1); }
+      const pop = () => { const top = pq[0]; const last = pq.pop(); if(pq.length){ pq[0]=last; siftDown(0);} return top; }
+      const siftUp = (i)=>{ while(i>0){ const p=(i-1>>1); if(pq[p][1] <= pq[i][1]) break; [pq[p],pq[i]]=[pq[i],pq[p]]; i=p; } }
+      const siftDown = (i)=>{ while(true){ let l=i*2+1, r=l+1, s=i; if(l<pq.length && pq[l][1]<pq[s][1]) s=l; if(r<pq.length && pq[r][1]<pq[s][1]) s=r; if(s===i) break; [pq[s],pq[i]]=[pq[i],pq[s]]; i=s;} }
+
+      push(src,0);
+      while(pq.length){
+        const [u,d] = pop();
+        if(visited[u]) continue; visited[u]=true;
+        for(const {to,w} of adj[u]){
+          if(dist[u]+w < dist[to]){ dist[to]=dist[u]+w; parent[to]=u; push(to, dist[to]); }
+        }
+      }
+      return {dist,parent};
+    }
+
+    function buildPath(parent, dst){
+      const path=[]; let cur=dst; if(parent[cur]===-1 && cur!==Number(srcSel.value)) return [];
+      while(cur!==-1){ path.push(cur); cur=parent[cur]; }
+      return path.reverse();
+    }
+
+    // ---------- Canvas Rendering ----------
+    const canvas = document.getElementById('cityCanvas');
+    const ctx = canvas.getContext('2d');
+    const NODE_R = 18;
+    let highlightedPath = [];
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // draw edges
+      for(const {u,v,w} of edges){
+        const a = nodes[u], b = nodes[v];
+        const onPath = inHighlightedEdge(u,v);
+        ctx.lineWidth = onPath ? 5 : 2.2;
+        ctx.strokeStyle = onPath ? getCssVar('--warn') : 'rgba(159,180,214,.6)';
+        ctx.beginPath();
+        ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+
+        // weight label
+        const mx = (a.x+b.x)/2, my=(a.y+b.y)/2;
+        const label = String(w);
+        ctx.font = '13px Inter, sans-serif';
+        const tw = ctx.measureText(label).width + 10;
+        const th = 18;
+        ctx.fillStyle = 'rgba(12,20,34,.9)';
+        roundRect(ctx, mx - tw/2, my - th/2, tw, th, 8, true, false);
+        ctx.fillStyle = '#cfe4ff';
+        ctx.fillText(label, mx - (tw-10)/2, my + 5);
+      }
+
+      // draw nodes
+      for(const n of nodes){
+        const isSrc = n.id === Number(srcSel.value);
+        const isDst = n.id === Number(dstSel.value);
+        const inPath = highlightedPath.includes(n.id);
+
+        // node circle
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, NODE_R, 0, Math.PI*2);
+        let fill = getCssVar('--node');
+        if(isSrc) fill = getCssVar('--brand');
+        else if(isDst) fill = getCssVar('--accent');
+        else if(inPath) fill = '#ffd55e';
+        ctx.fillStyle = fill; ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = getCssVar('--nodeBorder');
+        ctx.stroke();
+
+        // label
+        ctx.font='bold 13px Inter, sans-serif';
+        ctx.fillStyle='rgba(230,237,246,.95)';
+        const text = `${n.id}: ${n.name}`;
+        const tw = ctx.measureText(text).width;
+        let lx = n.x - tw/2; let ly = n.y - NODE_R - 10; if(ly < 18) ly = n.y + NODE_R + 18;
+        ctx.fillText(text, Math.max(8,lx), ly);
+      }
+    }
+
+    function getCssVar(name){
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill, stroke){
+      if (w < 2 * r) r = w / 2; if (h < 2 * r) r = h / 2;
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.arcTo(x+w, y,   x+w, y+h, r);
+      ctx.arcTo(x+w, y+h, x,   y+h, r);
+      ctx.arcTo(x,   y+h, x,   y,   r);
+      ctx.arcTo(x,   y,   x+w, y,   r);
+      ctx.closePath();
+      if (fill) ctx.fill(); if (stroke) ctx.stroke();
+    }
+
+    function inHighlightedEdge(u,v){
+      for(let i=0;i+1<highlightedPath.length;i++){
+        const a=highlightedPath[i], b=highlightedPath[i+1];
+        if((a===u&&b===v)||(a===v&&b===u)) return true;
+      }
+      return false;
+    }
+
+    // ---------- Interaction ----------
+    let dragging = null; // node being dragged
+    let dragOffset = {x:0,y:0};
+
+    canvas.addEventListener('mousedown', (e)=>{
+      const {x,y} = getMousePos(e);
+      const hit = hitNode(x,y);
+      if(hit){ dragging = hit; dragOffset.x = x-hit.x; dragOffset.y = y-hit.y; }
+    });
+
+    canvas.addEventListener('mousemove', (e)=>{
+      if(!dragging) return;
+      const {x,y} = getMousePos(e);
+      dragging.x = clamp(x - dragOffset.x, NODE_R+6, canvas.width - NODE_R-6);
+      dragging.y = clamp(y - dragOffset.y, NODE_R+6, canvas.height - NODE_R-6);
+      draw();
+    });
+
+    canvas.addEventListener('mouseup', ()=> dragging=null);
+    canvas.addEventListener('mouseleave', ()=> dragging=null);
+
+    // click to set src/dst (first click sets source, second sets destination, repeats)
+    let clickStage = 0; // 0 -> set src, 1 -> set dst
+    canvas.addEventListener('click', (e)=>{
+      const {x,y} = getMousePos(e);
+      const n = hitNode(x,y);
+      if(!n) return;
+      if(clickStage===0){ srcSel.value = n.id; clickStage = 1; }
+      else { dstSel.value = n.id; clickStage = 0; }
+      draw();
+    });
+
+    function getMousePos(evt){
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return { x: (evt.clientX - rect.left)*scaleX, y: (evt.clientY - rect.top)*scaleY };
+    }
+
+    function hitNode(x,y){
+      for(const n of nodes){
+        const dx = x-n.x, dy=y-n.y; if(dx*dx+dy*dy <= NODE_R*NODE_R) return n;
+      }
+      return null;
+    }
+
+    function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+
+    // ---------- Actions ----------
+    $('#findBtn').addEventListener('click', ()=>{
+      const s = Number(srcSel.value), d = Number(dstSel.value);
+      if(s===d){ highlightedPath=[s]; resBox.value = `Source and Destination are same (distance 0).\nPath: ${nodes[s].name}`; draw(); return; }
+      const adj = buildAdj();
+      const {dist,parent} = dijkstra(adj, s);
+      if(!isFinite(dist[d])){ resBox.value = `No path exists between ${nodes[s].name} and ${nodes[d].name}.`; highlightedPath=[]; draw(); return; }
+      const path = buildPath(parent, d);
+      highlightedPath = path.slice();
+      const pathByName = path.map(i=>nodes[i].name).join(' → ');
+      resBox.value = `Shortest Distance: ${dist[d]}\nPath: ${pathByName}`;
+      draw();
+    });
+
+    $('#resetBtn').addEventListener('click', ()=>{
+      highlightedPath = []; resBox.value=''; draw();
+    });
+
+    addEdgeBtn.addEventListener('click', ()=>{
+      const u = Number(edgeU.value), v=Number(edgeV.value), w = Number(edgeW.value);
+      if(!Number.isFinite(w) || w<=0 || u===v){ alert('Please enter a valid positive weight and choose different nodes.'); return; }
+      let found=false; for(const e of edges){ if((e.u===u&&e.v===v)||(e.u===v&&e.v===u)){ e.w=w; found=true; break; } }
+      if(!found) edges.push({u,v,w});
+      draw();
+    });
+
+    srcSel.addEventListener('change', draw); dstSel.addEventListener('change', draw);
+
+    // ---------- Init ----------
+    populateSelects();
+    draw();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+function dijkstra(graph, source):
+    dist[] = ∞
+    parent[] = -1
+    dist[source] = 0
+    priorityQueue.push(source, 0)
+
+    while queue not empty:
+        u = extractMin()
+        for each neighbor v of u:
+            if dist[u] + weight(u,v) < dist[v]:
+                dist[v] = dist[u] + weight(u,v)
+                parent[v] = u
+                priorityQueue.push(v, dist[v])
